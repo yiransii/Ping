@@ -75,7 +75,7 @@ struct Ping ping(char* hostname) {
 //    struct sockaddr_in * dest_addr;
     // get sour_addr
     // get dest_addr from argv[1]
-    struct hostent *host;
+    struct hostent *host = NULL;
     struct protoent *protocol;
     unsigned long in_addr = 0;
     //int sockfd;
@@ -99,8 +99,18 @@ struct Ping ping(char* hostname) {
     memset(&p.dest_addr, 0, sizeof(struct sockaddr_in)); // set mem to 0
     p.dest_addr.sin_family = AF_INET;
     
-    // TODO: if input is IP, get hostname by IP
     // TODO: set dest_addr
+    p.dest_addr.sin_addr.s_addr = inet_addr(hostname);
+    // TODO: if input is IP, get hostname by IP
+    in_addr = inet_addr(hostname);
+    if (in_addr == INADDR_NONE) {
+        host = gethostbyname(hostname);
+        perror("failed to get host by name");
+        exit(1);
+    }
+    memcpy((char *)&p.dest_addr.sin_addr, (char *)host->h_addr, host->h_length);
+    
+    printf("PING: %s IP: %s\n\n", hostname, inet_ntoa(p.dest_addr.sin_addr));
     
     return p;
 }
