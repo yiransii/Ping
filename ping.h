@@ -100,6 +100,7 @@ unsigned short cal_chksum(unsigned short * addr, int len) {
 int pack(struct Ping * p) {
     int sz;
     struct icmp *icmp;
+    icmp = (struct icmp*) p->sendpacket;
     icmp->icmp_type = ICMP_ECHO;
     icmp->icmp_code = 0;
     icmp->icmp_cksum = 0;
@@ -272,10 +273,15 @@ struct Ping ping(char* hostname) {
     in_addr = inet_addr(hostname);
     if (in_addr == INADDR_NONE) {
         host = gethostbyname(hostname);
-        perror("failed to get host by name");
-        exit(1);
+        if (host == NULL) {
+            perror("failed to get host by name");
+            exit(1);
+        }
+        memcpy((char *)&p.dest_addr.sin_addr, (char *)host->h_addr, host->h_length);
+    } else {
+
     }
-    memcpy((char *)&p.dest_addr.sin_addr, (char *)host->h_addr, host->h_length);
+    
     
     printf("PING: %s IP: %s\n\n", hostname, inet_ntoa(p.dest_addr.sin_addr));
     
