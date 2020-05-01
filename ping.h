@@ -97,24 +97,25 @@ unsigned short cal_chksum(unsigned short * addr, int len) {
 
 /* Helper function for send_packet
    Calculate packet size */
-int pack(struct Ping * p, int num) {
+int pack(struct Ping * p) {
     int sz;
     struct icmp *icmp;
     icmp->icmp_type = ICMP_ECHO;
     icmp->icmp_code = 0;
     icmp->icmp_cksum = 0;
-    icmp->icmp_seq = num;
+    icmp->icmp_seq = p->nsend;
     icmp->icmp_id = p->pid;
     sz = 8 + p->datalen;
     return sz;
 }
 
-int unpack(struct Ping *p, char * buff, int len) {
+int unpack(struct Ping *p, int len) {
     int ip_header;
     struct ip *ip;
     struct icmp *icmp;
     struct timeval *tvsend;
     double rtt; // round travel time
+    char * buff = (char *) p->recvpacket;
     
     ip = (struct ip*) buff;
     ip_header = ip->ip_hl << 2; //?
@@ -147,12 +148,61 @@ int unpack(struct Ping *p, char * buff, int len) {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 // infinitely receiving packets
-void listening() {
-    
+void sending(struct Ping *p) {
+    int packetsize;
+    while (1) {
+        p->nsend++;
+        packetsize = pack(p);
+        
+        if (sendto(p->sockfd, p->sendpacket, packetsize, 0, (struct sockaddr*) &p->dest_addr, sizeof(p->dest_addr)) < 0) {
+            perror("failed sendto");
+            exit(1);
+        }
+        // send packet periotically
+        sleep(1);
+        
+        //for testing only: break infinite while loop if sent && received MAX_PACKETS_NUM packets
+        if (p->nsend >= MAX_PACKETS_NUM && p->nreceived >= MAX_PACKETS_NUM) {
+             break;
+        }
+    } // end while (1)
 }
 
 // infinitely sending packets
-void sending() {
+void listening(struct Ping *p) {
+    int n;
+    unsigned int fromlen;
+    extern int errno;
+    
+    fromlen = sizeof(p->sour_addr);
+    
+    while (1) {
+        if ((n == recvfrom(p->sockfd, p->recvpacket, sizeof(p->recvpacket), 0, (struct sockaddr *) &p->sour_addr, &fromlen)) < 0) {
+            if (errno == EINTR) continue;
+            perror("failed recvfrom\n");
+            continue;
+        }
+    
+        // update timeval for recved packet
+        gettimeofday(&p->tvrecv, NULL);
+        
+        unpack(p, n);
+        
+        p->nreceived++;
+        
+        // stats for loss
+        double loss = (double)(p->nsend - p->nreceived) / (double)p->nsend;
+        printf("%d packets sent, %d received , %0.3f%% lost\n\n", p->nsend, p->nreceived, loss * 100);
+        
+        sleep(1);
+        
+        //for testing only: break infinite while loop if sent && received MAX_PACKETS_NUM packets
+        if (p->nsend >= MAX_PACKETS_NUM && p->nreceived >= MAX_PACKETS_NUM) {
+             break;
+        }
+    } // end while (1)
+    
+    
     
 }
 
@@ -160,10 +210,10 @@ void sending() {
 void start(struct Ping *p) {
     
     pthread_t send_th;
-    pthread_create(&send_th, NULL, (void *)sending, NULL);
+    pthread_create(&send_th, NULL, (void *)sending, (void *)p);
     
     pthread_t listen_th;
-    pthread_create(&listen_th, NULL, (void *)listening, NULL);
+    pthread_create(&listen_th, NULL, (void *)listening, (void *)p);
     
     pthread_join(send_th, NULL);
     pthread_join(listen_th, NULL);
