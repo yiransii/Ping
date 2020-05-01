@@ -29,15 +29,102 @@ struct Ping {
     void (*calc_time)(struct timeval *out, struct timeval *in);
     void (*start)(struct Ping *p);
 };
+
+////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////// Helper Functions ///////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+/* Substract packet recv time from packet sent time */
+void calc_time_diff(struct timeval * sent, struct timeval *recv) {
+    // 1 sec = 1000000 usec
+    // make convertion if necessary
+    if ((sent->tv_usec -= recv->tv_usec) < 0) {
+        --sent->tv_sec;
+        sent->tv_usec += 1000000;
+    }
+    sent->tv_sec -= recv->tv_sec;
+}
+
+/* Calculate checksum */
+//A checksum is a small-sized datum derived from a block of digital data for the purpose of detecting errors that may have been introduced during its transmission or storage. By themselves, checksums are often used to verify data integrity but are not relied upon to verify data authenticity.
+unsigned short cal_chksum(unsigned short * addr, int len) {
+    int nleft = len;
+    int sum = 0;
+    unsigned short *w = addr;
+    unsigned short answer = 0;
+    while (nleft > 1) {
+        sum += *w;
+        w++;
+        nleft -= 2;
+    }
+    if (nleft == 1) {
+        *(unsigned char *) (&answer) = *(unsigned char *)w;
+    }
+    sum = (sum >> 16) + (sum & 0xffff);
+    sum += (sum >> 16);
+    answer = ~sum;
+    return answer;
+}
+
+/* Helper function for send_packet
+   Calculate packet size */
+int pack(struct Ping * p, int num) {
+    int sz;
+    struct icmp *icmp;
+    icmp->icmp_type = ICMP_ECHO;
+    icmp->icmp_code = 0;
+    icmp->icmp_cksum = 0;
+    icmp->icmp_seq = num;
+    icmp->icmp_id = p->pid;
+    sz = 8 + p->datalen;
+    return sz;
+}
+
+int unpack(struct Ping *p, char * buff, int len) {
+    int ip_header;
+    struct ip *ip;
+    struct icmp *icmp;
+    struct timeval *tvsend;
+    double rtt; // round travel time
+    
+    ip = (struct ip*) buff;
+    ip_header = ip->ip_hl << 2; //?
+    icmp = (struct icmp*) (buff + ip_header);
+    len -= ip_header;
+    
+    if (len < 8) {
+        perror("ICMP packets length less than 8\n");
+        return -1;
+    }
+    if ((icmp->icmp_type == ICMP_ECHOREPLY) && (icmp->icmp_id == p->pid)) {
+        // get time stamp when packet was sent
+        tvsend = (struct timeval *) icmp->icmp_data;
+        // calc time interval between send and recv packets
+        calc_time(p->tvrecv, tvsend);
+        rtt = (p->tvrecv.tv_sec * 1000) + (tvsend->tv_usec / 1000);
+        
+        // print states for received packets
+        printf("pck received from %s: sz=%d bytes icmp_seq=%u ttl=%d rtt=%0.3f ms\n", inet_ntoa(p->sour_addr.sin_addr), len, icmp->icmp_seq, ip->ip_ttl, rtt);
+        return 1;
+    }
+    // if not echo reply or pid doesn't match
+    return -1;
+}
+
+
+
 ////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////// Struct Functions ///////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////
 
 // infinitely receiving packets
-void listening() {}
+void listening() {
+    
+}
 
 // infinitely sending packets
-void sending() {}
+void sending() {
+    
+}
 
 //main loop func for Ping
 void start(struct Ping *p) {
