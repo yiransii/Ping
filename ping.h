@@ -107,6 +107,15 @@ int pack(struct Ping * p) {
     icmp->icmp_seq = p->nsend;
     icmp->icmp_id = p->pid;
     sz = 8 + p->datalen;
+    
+    // update cur time of icmp pack
+    gettimeofday((struct timeval*)icmp->icmp_data, NULL);
+    
+    icmp->icmp_cksum = cal_chksum((unsigned short*)icmp, sz);
+    
+    
+    memcpy(p->sendpacket, (char * )icmp, sizeof(icmp));
+    printf("packing:  sizeof(icmp): %d, sz: %d\n", sizeof(icmp), sz);
     return sz;
 }
 
@@ -150,8 +159,12 @@ int unpack(struct Ping *p, int len) {
 
 // infinitely receiving packets
 void sending(struct Ping *p) {
+    int count = 0;
     int packetsize;
     while (1) {
+        count++;
+        printf("sending %d \n", count);
+        
         p->nsend++;
         packetsize = pack(p);
         
@@ -160,7 +173,7 @@ void sending(struct Ping *p) {
             exit(1);
         }
         // send packet periotically
-        sleep(1);
+        sleep(2);
         
         //for testing only: break infinite while loop if sent && received MAX_PACKETS_NUM packets
         if (p->nsend >= MAX_PACKETS_NUM && p->nreceived >= MAX_PACKETS_NUM) {
@@ -176,16 +189,19 @@ void listening(struct Ping *p) {
     extern int errno;
     
     fromlen = sizeof(p->sour_addr);
-    
+    int count = 0;
     while (1) {
-        if ((n == recvfrom(p->sockfd, p->recvpacket, sizeof(p->recvpacket), 0, (struct sockaddr *) &p->sour_addr, &fromlen)) < 0) {
+        count++;
+        printf("listening %d \n", count);
+        if ((n == recvfrom(p->sockfd, p->recvpacket, sizeof(p->recvpacket), 0, (struct sockaddr *) &(p->sour_addr), &fromlen)) < 0) {
             if (errno == EINTR) continue;
             perror("failed recvfrom\n");
             continue;
         }
+        printf("listening passed recvfrom \n");
     
         // update timeval for recved packet
-        gettimeofday(&p->tvrecv, NULL);
+        gettimeofday(&(p->tvrecv), NULL);
         
         unpack(p, n);
         
@@ -195,7 +211,7 @@ void listening(struct Ping *p) {
         double loss = (double)(p->nsend - p->nreceived) / (double)p->nsend;
         printf("%d packets sent, %d received , %0.3f%% lost\n\n", p->nsend, p->nreceived, loss * 100);
         
-        sleep(1);
+        sleep(2);
         
         //for testing only: break infinite while loop if sent && received MAX_PACKETS_NUM packets
         if (p->nsend >= MAX_PACKETS_NUM && p->nreceived >= MAX_PACKETS_NUM) {
